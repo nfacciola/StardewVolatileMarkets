@@ -39,6 +39,9 @@ ScaffoldingReadMe.txt
 # dotenv environment variables file
 .env
 
+# Visual Studio cache
+.vs/
+
 # Others
 ~$*
 *~
