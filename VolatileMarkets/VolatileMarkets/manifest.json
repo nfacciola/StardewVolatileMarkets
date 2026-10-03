@@ -6,5 +6,5 @@
   "UniqueID": "NicholasFacciola.VolatileMarkets",
   "EntryDll": "VolatileMarkets.dll",
   "MinimumApiVersion": "4.0.0",
-  "UpdateKeys": []
+  "UpdateKeys": [ "GitHub:nfacciola/StardewVolatileMarkets" ]
 }
