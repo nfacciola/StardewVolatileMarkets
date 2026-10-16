@@ -8,7 +8,7 @@ using SObject = StardewValley.Object;
 
 namespace VolatileMarkets
 {
-    /// <summary>Logs how this year's prices compare to vanilla, so a price change can be verified at a glance.</summary>
+    /// <summary>Logs how a day's prices compare to vanilla, so a price change can be verified at a glance.</summary>
     internal sealed class PriceLogger
     {
         /*********
@@ -19,7 +19,7 @@ namespace VolatileMarkets
         private readonly string OutputFolder;
 
         /// <summary>One row of the price comparison.</summary>
-        private record Row(string Id, string Name, int VanillaPrice, int NewPrice, float Multiplier, float? PreviousMultiplier);
+        private record Row(string Id, string Name, int VanillaPrice, int NewPrice, float Multiplier, float? PreviousDayMultiplier);
 
 
         /*********
@@ -37,28 +37,30 @@ namespace VolatileMarkets
         }
 
         /// <summary>Log a summary to the console and write the full comparison to a CSV.</summary>
-        /// <param name="year">The year to show prices for.</param>
-        /// <param name="label">A label for the log line and file name, like the season.</param>
-        public void Log(int year, string label)
+        /// <param name="day">The day to show prices for, as a <see cref="WorldDate.TotalDays"/> value.</param>
+        public void Log(int day)
         {
-            int? previousOverride = this.Book.YearOverride;
-            this.Book.YearOverride = year;
+            WorldDate date = WorldDate.ForDaysPlayed(day);
+            string label = $"Year {date.Year}, {date.SeasonKey} {date.DayOfMonth}";
+
+            int? previousOverride = this.Book.DayOverride;
+            this.Book.DayOverride = day;
             try
             {
-                List<Row> rows = this.BuildRows(year);
-                string path = this.WriteCsv(rows, year, label);
+                List<Row> rows = this.BuildRows(day);
+                string path = this.WriteCsv(rows, date);
 
-                this.Monitor.Log($"Prices for year {year}, {label} (vanilla -> now). Top 10 sell prices:", LogLevel.Info);
+                this.Monitor.Log($"Prices for {label} (vanilla -> now), whole market x{this.Book.GetMarketMultiplier(day):0.00}. Top 10 sell prices:", LogLevel.Info);
                 foreach (Row row in rows.OrderByDescending(r => r.NewPrice).Take(10))
                 {
-                    string last = row.PreviousMultiplier.HasValue ? $", last year x{row.PreviousMultiplier.Value:0.00}" : "";
+                    string last = row.PreviousDayMultiplier.HasValue ? $", day before x{row.PreviousDayMultiplier.Value:0.00}" : "";
                     this.Monitor.Log($"  {row.Name}: {row.VanillaPrice}g -> {row.NewPrice}g (x{row.Multiplier:0.00}{last})", LogLevel.Info);
                 }
                 this.Monitor.Log($"Full comparison of {rows.Count} items written to {path}", LogLevel.Info);
             }
             finally
             {
-                this.Book.YearOverride = previousOverride;
+                this.Book.DayOverride = previousOverride;
             }
         }
 
@@ -67,7 +69,7 @@ namespace VolatileMarkets
         ** Private methods
         *********/
         /// <summary>Build a row for every sellable object, plus the wines, jellies, juices and pickles made from each fruit and vegetable.</summary>
-        private List<Row> BuildRows(int year)
+        private List<Row> BuildRows(int day)
         {
             var rows = new List<Row>();
             ObjectDataDefinition objects = ItemRegistry.GetObjectTypeDefinition();
@@ -78,17 +80,17 @@ namespace VolatileMarkets
                 if (item is null)
                     continue;
 
-                this.AddRow(rows, item, year);
+                this.AddRow(rows, item, day);
 
                 if (item.Category == SObject.FruitsCategory)
                 {
-                    this.AddRow(rows, this.TryCreate(() => objects.CreateFlavoredWine(item)), year);
-                    this.AddRow(rows, this.TryCreate(() => objects.CreateFlavoredJelly(item)), year);
+                    this.AddRow(rows, this.TryCreate(() => objects.CreateFlavoredWine(item)), day);
+                    this.AddRow(rows, this.TryCreate(() => objects.CreateFlavoredJelly(item)), day);
                 }
                 else if (item.Category == SObject.VegetableCategory)
                 {
-                    this.AddRow(rows, this.TryCreate(() => objects.CreateFlavoredJuice(item)), year);
-                    this.AddRow(rows, this.TryCreate(() => objects.CreateFlavoredPickle(item)), year);
+                    this.AddRow(rows, this.TryCreate(() => objects.CreateFlavoredJuice(item)), day);
+                    this.AddRow(rows, this.TryCreate(() => objects.CreateFlavoredPickle(item)), day);
                 }
             }
 
@@ -96,7 +98,7 @@ namespace VolatileMarkets
         }
 
         /// <summary>Add a row for an item if it can be sold.</summary>
-        private void AddRow(List<Row> rows, SObject? item, int year)
+        private void AddRow(List<Row> rows, SObject? item, int day)
         {
             if (item is null)
                 return;
@@ -110,8 +112,8 @@ namespace VolatileMarkets
                 Name: item.DisplayName,
                 VanillaPrice: vanilla,
                 NewPrice: item.sellToStorePrice(),
-                Multiplier: this.Book.GetSellMultiplier(item, year),
-                PreviousMultiplier: year > 1 ? this.Book.GetSellMultiplier(item, year - 1) : null
+                Multiplier: this.Book.GetItemMultiplier(item, day),
+                PreviousDayMultiplier: day > 0 ? this.Book.GetItemMultiplier(item, day - 1) : null
             ));
         }
 
@@ -130,12 +132,12 @@ namespace VolatileMarkets
         }
 
         /// <summary>Write the rows to a CSV and return its path.</summary>
-        private string WriteCsv(List<Row> rows, int year, string label)
+        private string WriteCsv(List<Row> rows, WorldDate date)
         {
             Directory.CreateDirectory(this.OutputFolder);
-            string path = Path.Combine(this.OutputFolder, $"year{year}_{label}.csv");
+            string path = Path.Combine(this.OutputFolder, $"year{date.Year}_{date.SeasonKey}{date.DayOfMonth:00}.csv");
 
-            var csv = new StringBuilder("ItemId,Name,VanillaPrice,NewPrice,Multiplier,PreviousYearMultiplier\n");
+            var csv = new StringBuilder("ItemId,Name,VanillaPrice,NewPrice,Multiplier,PreviousDayMultiplier\n");
             foreach (Row row in rows.OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase))
             {
                 csv.Append(row.Id).Append(',')
@@ -143,7 +145,7 @@ namespace VolatileMarkets
                     .Append(row.VanillaPrice).Append(',')
                     .Append(row.NewPrice).Append(',')
                     .Append(row.Multiplier.ToString("0.000", CultureInfo.InvariantCulture)).Append(',')
-                    .Append(row.PreviousMultiplier?.ToString("0.000", CultureInfo.InvariantCulture) ?? "")
+                    .Append(row.PreviousDayMultiplier?.ToString("0.000", CultureInfo.InvariantCulture) ?? "")
                     .Append('\n');
             }
 

@@ -1,7 +1,7 @@
 ﻿{
   "Name": "VolatileMarkets",
   "Author": "Nicholas Facciola",
-  "Version": "1.0.0",
+  "Version": "1.1.0",
   "Description": "Randomizes market prices and sell values in Stardew Valley",
   "UniqueID": "NicholasFacciola.VolatileMarkets",
   "EntryDll": "VolatileMarkets.dll",
